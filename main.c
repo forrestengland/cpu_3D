@@ -8,6 +8,8 @@
 #define HEIGHT 600
 #define PI 3.1415926535
 
+#define CAMERA_DISTANCE 7.0;
+
 typedef struct {
   float x, y, z;
 } Vec3;
@@ -97,18 +99,74 @@ int load_obj(const char* filename) {
       Vec3 v;
       sscanf(line, "v %f %f %f", &v.x, &v.y, & v.z);
       add_vertex(v);
-    } else if (line[0] == 'f' && line[1] == ' ') {
+      
+      /*    } else if (line[0] == 'f' && line[1] == ' ') {
       Face f;
       sscanf(line, "f %d %d %d", &f.v[0], &f.v[1], &f.v[2]);
       f.v[0]--;
       f.v[1]--;
       f.v[2]--;
-      add_face(f);
+      add_face(f);*/
+    } else if (line[0] == 'f' && line[1] == ' ') {
+
+      int v[4];
+      int n[4];
+
+      int count = sscanf(
+			 line,
+			 "f %d//%d %d//%d %d//%d %d//%d",
+			 &v[0], &n[0],
+			 &v[1], &n[1],
+			 &v[2], &n[2],
+			 &v[3], &n[3]
+			 );
+
+      if (count == 6) {
+        /*
+         * Triangle
+         */
+        Face f;
+
+        f.v[0] = v[0] - 1;
+        f.v[1] = v[1] - 1;
+        f.v[2] = v[2] - 1;
+
+        add_face(f);
+      } else if (count == 8) {
+        /*
+         * Quad:
+         *
+         * 0 ----- 1
+         * |       |
+         * |       |
+         * 3 ----- 2
+         *
+         * split into:
+         *
+         * 0, 1, 2
+         * 0, 2, 3
+         */
+
+        Face f1;
+        f1.v[0] = v[0] - 1;
+        f1.v[1] = v[1] - 1;
+        f1.v[2] = v[2] - 1;
+
+        add_face(f1);
+
+        Face f2;
+        f2.v[0] = v[0] - 1;
+        f2.v[1] = v[2] - 1;
+        f2.v[2] = v[3] - 1;
+
+        add_face(f2);
+      }
     }
   }
-
+  
   fclose(file);
   printf("loaded obj: %d vertices, %d faces\n", vertex_count, face_count);
+  return 1;
 }
 
 int compare_faces(const void* a, const void* b) {
@@ -152,7 +210,7 @@ void process_render(SDL_Renderer* renderer, float angle) {
     // shift z location
     transformed[i].x = x1;
     transformed[i].y = y2;
-    transformed[i].z = z2 + 1.5; // camera distance
+    transformed[i].z = z2 + CAMERA_DISTANCE; // camera distance
   }
 
   SortedFace* sorted_list = malloc(face_count * sizeof(SortedFace));
@@ -264,7 +322,8 @@ int main(int argc, char* argv[]) {
   
   //  load_obj("cube.obj");
   //  load_obj("teapot.obj");
-    load_obj("mactri.obj");
+  //    load_obj("mactri.obj");
+  load_obj("shape.obj");
 
   SDL_Window* window = SDL_CreateWindow("3d", WIDTH, HEIGHT, 0);
   SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);

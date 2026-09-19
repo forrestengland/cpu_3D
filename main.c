@@ -3,12 +3,13 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <string.h>
 
 #define WIDTH 800
 #define HEIGHT 600
 #define PI 3.1415926535
 
-#define CAMERA_DISTANCE 7.0;
+#define CAMERA_DISTANCE 7.0
 
 typedef struct {
   float x, y, z;
@@ -79,13 +80,136 @@ void add_face(Face f) {
   faces[fi].v[0] = f.v[0];
   faces[fi].v[1] = f.v[1];
   faces[fi].v[2] = f.v[2];
-  /*  faces[fi].color.r = f.color.r;
-  faces[fi].color.g = f.color.g;
-  faces[fi].color.b = f.color.b;
-  faces[fi].color.a = f.color.a; */
 }
 
 int load_obj(const char* filename) {
+
+  FILE* file = fopen(filename, "r");
+
+  if (!file) {
+    printf("failed to open file %s\n", filename);
+    return 0;
+  }
+
+  char line[4096];
+
+  while (fgets(line, sizeof(line), file)) {
+
+    /*
+     * Vertex
+     *
+     * v x y z
+     */
+    if (line[0] == 'v' && line[1] == ' ') {
+
+      Vec3 v;
+
+      if (sscanf(line, "v %f %f %f",
+                 &v.x, &v.y, &v.z) == 3) {
+
+        add_vertex(v);
+      }
+    }
+
+    /*
+     * Face
+     *
+     * Wings3D produces things like:
+     *
+     * f 1//1 5//5 6//6
+     *
+     * or:
+     *
+     * f 1//1 5//5 6//6 12//12 11//11 2//2
+     *
+     * The second number is the normal index.
+     * We don't need it, since our renderer
+     * calculates face normals itself.
+     */
+    else if (line[0] == 'f' && line[1] == ' ') {
+
+      int v[64];
+      int polygon_vertex_count = 0;
+
+      /*
+       * Start after "f "
+       */
+      char* token = strtok(line + 2, " \t\r\n");
+
+      while (token && polygon_vertex_count < 64) {
+
+        int vertex_index;
+        int normal_index;
+
+        /*
+         * Parse:
+         *
+         * vertex//normal
+         *
+         * Example:
+         *
+         * 12//12
+         */
+        if (sscanf(token, "%d//%d",
+                   &vertex_index,
+                   &normal_index) == 2) {
+
+          /*
+           * OBJ indices start at 1.
+           * Our arrays start at 0.
+           */
+          v[polygon_vertex_count] = vertex_index - 1;
+
+          polygon_vertex_count++;
+        }
+
+        token = strtok(NULL, " \t\r\n");
+      }
+
+      /*
+       * Triangulate polygon using a triangle fan.
+       *
+       *      0
+       *     /|\
+       *    / | \
+       *   1--2--3--4
+       *
+       * becomes:
+       *
+       * 0,1,2
+       * 0,2,3
+       * 0,3,4
+       */
+      if (polygon_vertex_count >= 3) {
+
+        for (int i = 1;
+             i < polygon_vertex_count - 1;
+             i++) {
+
+          Face f;
+
+          f.v[0] = v[0];
+          f.v[1] = v[i];
+          f.v[2] = v[i + 1];
+
+          add_face(f);
+        }
+      }
+    }
+  }
+
+  fclose(file);
+
+  printf(
+    "loaded obj: %d vertices, %d triangles\n",
+    vertex_count,
+    face_count
+  );
+
+  return 1;
+}
+
+/*int load_obj(const char* filename) {
 
   FILE* file = fopen(filename, "r");
   if (!file) {
@@ -100,13 +224,6 @@ int load_obj(const char* filename) {
       sscanf(line, "v %f %f %f", &v.x, &v.y, & v.z);
       add_vertex(v);
       
-      /*    } else if (line[0] == 'f' && line[1] == ' ') {
-      Face f;
-      sscanf(line, "f %d %d %d", &f.v[0], &f.v[1], &f.v[2]);
-      f.v[0]--;
-      f.v[1]--;
-      f.v[2]--;
-      add_face(f);*/
     } else if (line[0] == 'f' && line[1] == ' ') {
 
       int v[4];
@@ -122,9 +239,6 @@ int load_obj(const char* filename) {
 			 );
 
       if (count == 6) {
-        /*
-         * Triangle
-         */
         Face f;
 
         f.v[0] = v[0] - 1;
@@ -133,19 +247,6 @@ int load_obj(const char* filename) {
 
         add_face(f);
       } else if (count == 8) {
-        /*
-         * Quad:
-         *
-         * 0 ----- 1
-         * |       |
-         * |       |
-         * 3 ----- 2
-         *
-         * split into:
-         *
-         * 0, 1, 2
-         * 0, 2, 3
-         */
 
         Face f1;
         f1.v[0] = v[0] - 1;
@@ -167,7 +268,7 @@ int load_obj(const char* filename) {
   fclose(file);
   printf("loaded obj: %d vertices, %d faces\n", vertex_count, face_count);
   return 1;
-}
+} */
 
 int compare_faces(const void* a, const void* b) {
   SortedFace* face_a = (SortedFace*)a;
@@ -323,7 +424,7 @@ int main(int argc, char* argv[]) {
   //  load_obj("cube.obj");
   //  load_obj("teapot.obj");
   //    load_obj("mactri.obj");
-  load_obj("shape.obj");
+  load_obj("deer.obj");
 
   SDL_Window* window = SDL_CreateWindow("3d", WIDTH, HEIGHT, 0);
   SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);

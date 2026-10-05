@@ -150,9 +150,10 @@ int load_obj(const char* filename) {
          *
          * 12//12
          */
-        if (sscanf(token, "%d//%d",
+	/*        if (sscanf(token, "%d//%d",
                    &vertex_index,
-                   &normal_index) == 2) {
+                   &normal_index) == 2) { */
+	if (sscanf(token, "%d", &vertex_index) == 1) {
 
           /*
            * OBJ indices start at 1.
@@ -424,7 +425,8 @@ int main(int argc, char* argv[]) {
   //  load_obj("cube.obj");
   //  load_obj("teapot.obj");
   //    load_obj("mactri.obj");
-  load_obj("deer.obj");
+  //  load_obj("deer.obj");
+  load_obj("duck.obj");
 
   SDL_Window* window = SDL_CreateWindow("3d", WIDTH, HEIGHT, 0);
   SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);

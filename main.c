@@ -1,4 +1,5 @@
 #include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -10,6 +11,14 @@
 #define PI 3.1415926535
 
 #define CAMERA_DISTANCE 7.0
+
+#define ROTATION_SPEED 75.0
+
+#define FRAME_RATE_CAP 60
+
+int cap_framerate = 1;
+
+int display_wireframe = 1;
 
 typedef struct {
   float x, y, z;
@@ -32,6 +41,32 @@ int vertex_capacity = 0;
 Face* faces = NULL;
 int face_count = 0;
 int face_capacity = 0;
+
+TTF_Font* debug_font = NULL;
+
+// Time
+double getTime() {
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+
+    return ts.tv_sec +
+           ts.tv_nsec / 1000000000.0;
+}
+
+void cap_frame_rate(double frame_start_time)
+{
+  if (FRAME_RATE_CAP <= 0)
+    return;
+
+  double target_frame_time = 1.0 / FRAME_RATE_CAP;
+  double elapsed = getTime() - frame_start_time;
+  double remaining = target_frame_time - elapsed;
+
+  if (remaining > 0.0) {
+    SDL_Delay((Uint32)(remaining * 1000.0));
+  }
+}
 
 Vec3 normalize_vector(Vec3 v) {
   float length = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
@@ -341,18 +376,24 @@ void process_render(SDL_Renderer* renderer, float angle) {
       normal.z * cameraRay.z;
 
     // backface culling
-    if (dot < 0.0f) {
+    if (!display_wireframe) {
+      if (dot < 0.0f) {
 
+	sorted_list[visible_face_count].face_index = i;
+	sorted_list[visible_face_count].avg_z = (p0.z + p1.z + p2.z) / 3.0;
+	visible_face_count++;
+      }
+
+    } else {
       sorted_list[visible_face_count].face_index = i;
       sorted_list[visible_face_count].avg_z = (p0.z + p1.z + p2.z) / 3.0;
       visible_face_count++;
-
     }
   }
 
   qsort(sorted_list, visible_face_count, sizeof(SortedFace), compare_faces);
 
-  //    SDL_FPoint screen[3];
+  //  SDL_FPoint screen[3];
   float fov = 600.0;
 
   for (int i=0; i<visible_face_count; i++) {
@@ -381,38 +422,119 @@ void process_render(SDL_Renderer* renderer, float angle) {
     SDL_Vertex sdl_vertices[3];
     
     for (int j=0; j<3; j++) {
-      Vec3 p = transformed[f.v[j]];
       
-      //screen[j].x = (p.x * fov) / p.z + (WIDTH / 2.0);
-      //      screen[j].y = (p.y * fov) / p.z + (HEIGHT / 2.0);
+      Vec3 p = transformed[f.v[j]];
 
       sdl_vertices[j].position.x = (p.x * fov) / p.z + (WIDTH / 2.0);
-      sdl_vertices[j].position.y = (p.y * fov) / p.z + (HEIGHT / 2.0);
+	sdl_vertices[j].position.y = (p.y * fov) / p.z + (HEIGHT / 2.0);
 
-      sdl_vertices[j].color.r = (base_r * total_shade) / 255.0;
-      sdl_vertices[j].color.g = (base_g * total_shade) / 255.0;
-      sdl_vertices[j].color.b = (base_b * total_shade) / 255.0;
-      sdl_vertices[j].color.a = 1.0;
+	sdl_vertices[j].color.r = (base_r * total_shade) / 255.0;
+	sdl_vertices[j].color.g = (base_g * total_shade) / 255.0;
+	sdl_vertices[j].color.b = (base_b * total_shade) / 255.0;
+	sdl_vertices[j].color.a = 1.0;
 
-      // disregard uv map parameters for flat fill
-      sdl_vertices[j].tex_coord.x = 0.0;
-      sdl_vertices[j].tex_coord.y = 0.0;
+	// disregard uv map parameters for flat fill
+	sdl_vertices[j].tex_coord.x = 0.0;
+	sdl_vertices[j].tex_coord.y = 0.0;
     }
 
-    SDL_RenderGeometry(renderer, NULL, sdl_vertices, 3, NULL, 0);
+    if (display_wireframe) {
 
-    // draw wireframe
-    /*    SDL_RenderLine(renderer, screen[0].x, screen[0].y,
-		   screen[1].x, screen[1].y);
-    SDL_RenderLine(renderer, screen[1].x, screen[1].y,
-		   screen[2].x, screen[2].y);
-    SDL_RenderLine(renderer, screen[2].x, screen[2].y,
-    screen[0].x, screen[0].y); */
-      //    }
+      SDL_SetRenderDrawColor(renderer, 0, 255, 180, 255);
+
+      SDL_RenderLine(renderer,
+		     sdl_vertices[0].position.x,
+		     sdl_vertices[0].position.y,
+		     sdl_vertices[1].position.x,
+		     sdl_vertices[1].position.y);
+
+      SDL_RenderLine(renderer,
+		     sdl_vertices[1].position.x,
+		     sdl_vertices[1].position.y,
+		     sdl_vertices[2].position.x,
+		     sdl_vertices[2].position.y);
+
+      SDL_RenderLine(renderer,
+		     sdl_vertices[2].position.x,
+		     sdl_vertices[2].position.y,
+		     sdl_vertices[0].position.x,
+		     sdl_vertices[0].position.y);
+      
+	
+    } else {
+
+      SDL_RenderGeometry(renderer, NULL, sdl_vertices, 3, NULL, 0);
+    }
+
+
   }
+
 
   free(sorted_list);
   free(transformed);
+}
+
+void draw_text(SDL_Renderer* renderer, const char* text, float x, float y) {
+  
+  SDL_Color color = {255, 255, 255, 255};
+
+  SDL_Surface* surface = TTF_RenderText_Blended(debug_font, text, 0, color);
+
+  if (!surface) {
+    printf("TTF_RenderText_Blended failed: %s\n",
+	   SDL_GetError());
+    return;
+  }
+
+  SDL_Texture* texture =
+    SDL_CreateTextureFromSurface(renderer, surface);
+
+  if (!texture) {
+    printf("SDL_CreateTextureFromSurface failed: %s\n",
+	   SDL_GetError());
+    SDL_DestroySurface(surface);
+    return;
+  }
+
+  SDL_FRect dst = {
+    x,
+    y,
+    (float)surface->w,
+    (float)surface->h
+  };
+
+  SDL_RenderTexture(renderer, texture, NULL, &dst);
+
+  SDL_DestroyTexture(texture);
+  SDL_DestroySurface(surface);
+}
+
+void draw_hud(SDL_Renderer* renderer,
+              float angle,
+              int fps)
+{
+    char text[128];
+
+    snprintf(text, sizeof(text),
+             "FPS: %d", fps);
+    draw_text(renderer, text, 10, 10);
+
+    snprintf(text, sizeof(text),
+             "Vertices: %d", vertex_count);
+    draw_text(renderer, text, 10, 30);
+
+    snprintf(text, sizeof(text),
+             "Triangles: %d", face_count);
+    draw_text(renderer, text, 10, 50);
+
+    snprintf(text, sizeof(text),
+             "Mode: %s",
+             display_wireframe ? "WIREFRAME" : "SOLID");
+    draw_text(renderer, text, 10, 70);
+
+    snprintf(text, sizeof(text),
+             "Angle: %.1f", angle);
+    draw_text(renderer, text, 10, 90);
 }
 
 int main(int argc, char* argv[]) {
@@ -421,6 +543,16 @@ int main(int argc, char* argv[]) {
 
   SDL_Init(SDL_INIT_VIDEO);
 
+  if (!TTF_Init()) {
+    printf("TTF_Init failed: %s\n", SDL_GetError());
+    return 1;
+  }  
+  debug_font = TTF_OpenFont("supermaples.ttf", 16);
+
+  if (!debug_font) {
+    printf("failed to load font: %s\n", SDL_GetError());
+    return 1;
+  }
   
   //  load_obj("cube.obj");
   //  load_obj("teapot.obj");
@@ -434,13 +566,43 @@ int main(int argc, char* argv[]) {
   int running = 1;
   float angle = 0.0;
 
+  // Timing
+  double previousTime = getTime();
+  int frameCount = 0;
+  double fpsTimer = 0.0;
+  int fps = 0;
+
   while (running) {
+
+    double frameStartTime = getTime();
+
+    double currentTime = getTime();
+    double deltaTime = currentTime - previousTime;
+    previousTime = currentTime;
+
+    // FPS
+    frameCount++;
+    fpsTimer += deltaTime;
+    if (fpsTimer >= 1.0) {
+      //      printf("FPS: %d\n", frameCount);
+      fps = frameCount;
+      frameCount = 0;
+      fpsTimer = 0.0;
+    }
 
     SDL_Event event;
 
     while (SDL_PollEvent(&event)) {
 
-      if (event.type == SDL_EVENT_QUIT) running = 0;
+      if (event.type == SDL_EVENT_QUIT) {
+	running = 0;
+      } else if (event.type == SDL_EVENT_KEY_DOWN) {
+	if (event.key.key == SDLK_W) {
+	  display_wireframe = !display_wireframe;
+	} else if (event.key.key == SDLK_C) {
+	  cap_framerate = !cap_framerate;
+	}
+      }
     }
 
     SDL_SetRenderDrawColor(renderer, 10, 14, 22, 255);
@@ -449,9 +611,14 @@ int main(int argc, char* argv[]) {
     SDL_SetRenderDrawColor(renderer, 0, 255, 180, 255);
     process_render(renderer, angle);
 
+    draw_hud(renderer, angle, fps);
+
     SDL_RenderPresent(renderer);
-    angle += 0.8;
-    SDL_Delay(16);
+    angle += ROTATION_SPEED * deltaTime;
+
+    if (cap_framerate) {
+      cap_frame_rate(frameStartTime);
+    }
   }
 
   free(vertices);
